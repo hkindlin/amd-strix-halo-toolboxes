@@ -315,7 +315,7 @@
               };
 
               model = mkOption {
-                type = types.path;
+                type = types.str;
                 description = "Path to GGUF model file";
               };
 
@@ -362,7 +362,7 @@
 
             # Legacy single-model support (backwards compatible)
             model = mkOption {
-              type = types.nullOr types.path;
+              type = types.nullOr types.str;
               default = null;
               description = "DEPRECATED: Use 'models' instead. Path to a single GGUF model file";
             };
