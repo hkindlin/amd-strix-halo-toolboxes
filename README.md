@@ -54,7 +54,6 @@ AMD has recalled this update, but if you have already installed it, you must dow
 8. [More Documentation](#8-more-documentation)  
 9. [References](#9-references)
 
-
 ## Quick Answers (Read This First)
 
 ### How do I get a toolbox up and running?
