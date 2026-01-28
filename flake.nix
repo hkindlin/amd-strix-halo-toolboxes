@@ -402,6 +402,12 @@
               default = [ ];
               description = "Additional global arguments for all llama-server instances";
             };
+
+            _modelsToRun = mkOption {
+              type = types.listOf modelSubmodule;
+              internal = true;
+              description = "Internal option: computed list of models to run";
+            };
           };
 
           config = mkIf cfg.enable {

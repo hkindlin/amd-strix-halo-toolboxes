@@ -40,7 +40,49 @@ nix run .#vram-estimator -- /path/to/model.gguf
 
 > **Note:** AMDVLK has been deprecated in nixpkgs. RADV is now the default and recommended Vulkan driver for AMD GPUs. If you need AMDVLK, you can use the Docker toolbox containers instead.
 
-## NixOS System Integration
+### Adding to `configuration.nix `
+
+Add llama.cpp services to your NixOS system with automatic GPU support:
+
+**1. Add to `/etc/nixos/flake.nix` (inputs):**
+```nix
+inputs = {
+  nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  strix-halo-toolboxes.url = "github:hkindlin/amd-strix-halo-toolboxes";
+};
+```
+
+**2. Add to `/etc/nixos/flake.nix` (modules):**
+```nix
+modules = [
+  strix-halo-toolboxes.nixosModules.default
+  ./configuration.nix
+];
+```
+
+**3. Add to `/etc/nixos/configuration.nix`:**
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  backend = "vulkan-radv";
+  models = [
+    {
+      name = "fast";
+      model = /mnt/models/mistral-7b.gguf;
+      port = 8000;
+    }
+  ];
+};
+```
+
+**4. Rebuild and activate:**
+```bash
+sudo nixos-rebuild switch
+systemctl status 'strix-halo-llama-*'
+curl http://localhost:8000/v1/models
+```
+
+## Configuration
 
 ### Single Model
 
@@ -162,14 +204,21 @@ This creates:
 
 ### Adding to Your System's flake.nix
 
-To integrate this project into your NixOS system, first add it to `/etc/nixos/flake.nix`:
+To integrate this project into your NixOS system, follow these steps:
+
+#### Step 1: Update `/etc/nixos/flake.nix`
+
+Add the strix-halo-toolboxes as an input:
 
 ```nix
 {
+  description = "My NixOS system configuration";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     strix-halo-toolboxes.url = "git+file:///home/hk/prj/amd-strix-halo-toolboxes";
-    # Or from GitHub if you forked it:
+    
+    # Or if you've forked it to GitHub:
     # strix-halo-toolboxes.url = "github:your-username/amd-strix-halo-toolboxes";
   };
 
@@ -177,7 +226,7 @@ To integrate this project into your NixOS system, first add it to `/etc/nixos/fl
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        strix-halo-toolboxes.nixosModules.default
+        strix-halo-toolboxes.nixosModules.default  # ← Add this line
         ./configuration.nix
       ];
     };
@@ -185,9 +234,68 @@ To integrate this project into your NixOS system, first add it to `/etc/nixos/fl
 }
 ```
 
-Then in your `configuration.nix`, use the configuration examples above.
+#### Step 2: Configure in `/etc/nixos/configuration.nix`
 
-### Configuration Reference
+Add the services configuration. Here are common examples:
+
+**Simple single model:**
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  backend = "vulkan-radv";
+  model = /mnt/models/mistral-7b.gguf;
+  port = 8000;
+};
+```
+
+**Multiple models with mixed backends:**
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  backend = "vulkan-radv";  # Default for all models
+  
+  models = [
+    {
+      name = "fast";
+      model = /mnt/models/mistral-7b.gguf;
+      port = 8000;
+    }
+    {
+      name = "large";
+      model = /mnt/models/qwen-30b.gguf;
+      port = 8001;
+      contextSize = 16384;  # Override default
+    }
+    {
+      name = "rocm-worker";
+      model = /mnt/models/llama2-70b.gguf;
+      port = 8002;
+      backend = "rocm";  # Override to ROCm for this model
+    }
+  ];
+};
+```
+
+#### Step 3: Rebuild and activate
+
+```bash
+sudo nixos-rebuild switch
+```
+
+#### Step 4: Verify services are running
+
+```bash
+# Check status
+systemctl status 'strix-halo-llama-*'
+
+# View logs for a specific model
+journalctl -u strix-halo-llama-fast -f
+
+# Query the API
+curl http://localhost:8000/v1/models
+```
+
+### Options Reference
 
 All available options for per-model configuration:
 
@@ -254,6 +362,14 @@ curl http://localhost:8002/v1/models
 ```
 
 ## Development and Testing
+
+Enter a development shell with tools:
+
+```bash
+nix develop .#vulkan-radv     # Vulkan RADV
+nix develop .#vulkan          # Alias for vulkan-radv
+nix develop .#rocm            # ROCm/HIP
+```
 
 ### List Available GPUs
 
