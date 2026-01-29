@@ -411,6 +411,14 @@
           };
 
           config = mkIf cfg.enable {
+            # Create static user for llama-server
+            users.users.llama-server = {
+              isSystemUser = true;
+              group = "llama-server";
+              extraGroups = [ "video" "render" ];
+            };
+            users.groups.llama-server = {};
+
             # Required for GPU access
             boot.kernelModules = [ "amdgpu" ];
             hardware.graphics.enable = true;
@@ -460,10 +468,17 @@
                       wantedBy = [ "multi-user.target" ];
                       after = [ "network.target" ];
 
-                      environment = {
-                        HSA_OVERRIDE_GFX_VERSION = mkIf (effectiveBackend == "rocm") "11.5.1";
-                        AMD_VULKAN_ICD = mkIf (effectiveBackend == "vulkan-radv" || effectiveBackend == "vulkan") "RADV";
-                      };
+                      environment = (lib.optionalAttrs (effectiveBackend == "rocm") {
+                        HSA_OVERRIDE_GFX_VERSION = "11.5.1";
+                        LD_LIBRARY_PATH = lib.makeLibraryPath [
+                          pkgs.rocmPackages.clr
+                          pkgs.rocmPackages.rocm-runtime
+                          pkgs.rocmPackages.rocblas
+                          pkgs.rocmPackages.hipblas
+                        ];
+                      }) // (lib.optionalAttrs (effectiveBackend == "vulkan-radv" || effectiveBackend == "vulkan") {
+                        AMD_VULKAN_ICD = "RADV";
+                      });
 
                       serviceConfig = {
                         Type = "simple";
@@ -478,11 +493,24 @@
 
                         Restart = "on-failure";
                         RestartSec = 5;
-                        DynamicUser = true;
+                        User = "llama-server";
+                        Group = "llama-server";
                         SupplementaryGroups = [ "video" "render" ];
-                        DeviceAllow = [ "/dev/dri rw" "/dev/kfd rw" ];
-                        PrivateDevices = false;
-                        ProtectKernelTunables = false;
+                        
+                        # Security hardening
+                        ProtectHome = true;
+                        PrivateTmp = true;
+                        NoNewPrivileges = true;
+                        ProtectKernelModules = true;
+                        ProtectKernelLogs = true;
+                        ProtectControlGroups = true;
+                        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+                        RestrictNamespaces = true;
+                        LockPersonality = true;
+                        RestrictRealtime = true;
+                        RestrictSUIDSGID = true;
+                        RemoveIPC = true;
+                        PrivateMounts = true;
                       };
                     };
                 };
