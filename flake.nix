@@ -481,6 +481,8 @@
                         DynamicUser = true;
                         SupplementaryGroups = [ "video" "render" ];
                         DeviceAllow = [ "/dev/dri rw" "/dev/kfd rw" ];
+                        PrivateDevices = false;
+                        ProtectKernelTunables = false;
                       };
                     };
                 };
