@@ -342,6 +342,13 @@
                 description = "Server bind address";
               };
 
+              idleTimeout = mkOption {
+                type = types.nullOr types.int;
+                default = null;
+                description = "Seconds of inactivity before unloading model (like Ollama). Null = never unload";
+                example = 300;
+              };
+
               extraArgs = mkOption {
                 type = types.listOf types.str;
                 default = [ ];
@@ -403,6 +410,23 @@
               description = "Additional global arguments for all llama-server instances";
             };
 
+            idleTimeout = mkOption {
+              type = types.nullOr types.int;
+              default = null;
+              description = ''Seconds of inactivity before unloading model from memory (similar to Ollama).
+                Set to 0 for immediate unload after each request, null to never unload.
+                Can be overridden per-model.'';
+              example = 300;
+            };
+
+            startupDelay = mkOption {
+              type = types.int;
+              default = 10;
+              description = ''Seconds to wait after boot before starting llama-server.
+                This prevents ROCm crashes when the GPU is not fully initialized.
+                Set to 0 to disable (not recommended for ROCm).'';
+            };
+
             _modelsToRun = mkOption {
               type = types.listOf modelSubmodule;
               internal = true;
@@ -438,6 +462,7 @@
                   port = cfg.port;
                   contextSize = cfg.contextSize;
                   host = cfg.host;
+                  idleTimeout = cfg.idleTimeout;
                   extraArgs = cfg.extraArgs;
                 }
               ]
@@ -462,11 +487,19 @@
                     let
                       effectiveBackend = if model.backend == null then cfg.backend else model.backend;
                       llamaPkg = getLlamaPkg model.backend;
+                      # Use per-model idleTimeout if set, otherwise global, otherwise null
+                      effectiveIdleTimeout = if model.idleTimeout != null then model.idleTimeout else cfg.idleTimeout;
+                      idleTimeoutArgs = lib.optionalString (effectiveIdleTimeout != null) "--idle-timeout ${toString effectiveIdleTimeout}";
                     in
                     {
                       description = "Llama.cpp Server - ${model.name} [${effectiveBackend}] (Strix Halo)";
                       wantedBy = [ "multi-user.target" ];
-                      after = [ "network.target" ];
+                      
+                      # Wait for GPU hardware to be ready - critical for ROCm stability on boot
+                      after = [ "network.target" "systemd-udev-settle.service" ]
+                        ++ lib.optionals (effectiveBackend == "rocm") [ "dev-kfd.device" ];
+                      wants = [ "systemd-udev-settle.service" ];
+                      requires = lib.optionals (effectiveBackend == "rocm") [ "dev-kfd.device" ];
 
                       environment = (lib.optionalAttrs (effectiveBackend == "rocm") {
                         HSA_OVERRIDE_GFX_VERSION = "11.5.1";
@@ -482,17 +515,26 @@
 
                       serviceConfig = {
                         Type = "simple";
+                        
+                        # Startup delay to ensure GPU is fully initialized (prevents ROCm race conditions)
+                        ExecStartPre = lib.mkIf (cfg.startupDelay > 0) "${pkgs.coreutils}/bin/sleep ${toString cfg.startupDelay}";
+                        
                         ExecStart = ''
                           ${llamaPkg}/bin/llama-server \
                             -m ${model.model} \
                             -c ${toString model.contextSize} \
                             -ngl 999 -fa 1 --no-mmap \
                             --host ${model.host} --port ${toString model.port} \
+                            ${idleTimeoutArgs} \
                             ${concatStringsSep " " model.extraArgs}
                         '';
 
                         Restart = "on-failure";
-                        RestartSec = 5;
+                        RestartSec = 10;
+                        # Retry multiple times with increasing delays on boot failures
+                        StartLimitIntervalSec = 300;
+                        StartLimitBurst = 5;
+                        
                         User = "llama-server";
                         Group = "llama-server";
                         SupplementaryGroups = [ "video" "render" ];

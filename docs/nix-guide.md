@@ -65,6 +65,7 @@ modules = [
 services.strix-halo-llama = {
   enable = true;
   backend = "vulkan-radv";
+  idleTimeout = 300;  # Unload models after 5 minutes of inactivity (like Ollama)
   models = [
     {
       name = "fast";
@@ -83,6 +84,36 @@ curl http://localhost:8000/v1/models
 ```
 
 ## Configuration
+
+### Idle Timeout (Ollama-like Behavior)
+
+By default, models stay loaded in memory permanently. To automatically unload models after a period of inactivity (similar to Ollama's keep-alive feature), use the `idleTimeout` option:
+
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  backend = "vulkan-radv";
+  idleTimeout = 300;  # Unload models after 5 minutes of inactivity
+  
+  models = [
+    { name = "assistant"; model = /mnt/models/mistral-7b.gguf; port = 8000; }
+    { 
+      name = "always-on"; 
+      model = /mnt/models/small-model.gguf; 
+      port = 8001;
+      idleTimeout = null;  # Override: this model never unloads
+    }
+  ];
+};
+```
+
+| `idleTimeout` Value | Behavior |
+|---------------------|----------|
+| `null` (default)    | Model stays loaded forever |
+| `0`                 | Unload immediately after each request |
+| `300`               | Unload after 5 minutes of no requests |
+
+When a model is unloaded, the next request will trigger a reload (with a brief delay).
 
 ### Single Model
 
@@ -307,8 +338,21 @@ All available options for per-model configuration:
   backend = "vulkan-radv";        # "vulkan-radv", "vulkan", "rocm" (optional, inherits global)
   contextSize = 8192;             # Context window size (optional, default 8192)
   host = "127.0.0.1";             # Listen address (optional, default "127.0.0.1")
+  idleTimeout = 300;              # Seconds before unloading model (optional, like Ollama's keep-alive)
   extraArgs = [ "--threads" "8" ]; # Additional llama-server arguments (optional)
 }
+```
+
+Global options:
+
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  backend = "vulkan-radv";        # Default backend for all models
+  idleTimeout = 300;              # Default idle timeout for all models (null = never unload)
+  startupDelay = 10;              # Seconds to wait for GPU initialization on boot (prevents ROCm crashes)
+  # ...
+};
 ```
 
 ## Service Management
@@ -445,6 +489,30 @@ ls -la /dev/dri /dev/kfd
 # Verify user group membership
 groups
 ```
+
+### ROCm service crashes on boot (SEGV in libamdhip64)
+
+If the llama-server crashes immediately after boot with a stack trace mentioning `libamdhip64.so` or `ReferenceCountedObject::release`, the GPU isn't fully initialized when the service starts.
+
+**Solution 1:** Increase the startup delay (default is 10 seconds):
+```nix
+services.strix-halo-llama = {
+  enable = true;
+  startupDelay = 15;  # Wait 15 seconds for GPU initialization
+  # ...
+};
+```
+
+**Solution 2:** Check the service status and manually restart if needed:
+```bash
+# View the crash logs
+journalctl -u strix-halo-llama-<name> -b
+
+# Manually restart after boot
+systemctl restart strix-halo-llama-<name>
+```
+
+The NixOS module automatically adds dependencies on `dev-kfd.device` and `systemd-udev-settle.service` for ROCm services, but some systems may need extra delay for the GPU to fully initialize.
 
 ### Build failures
 
