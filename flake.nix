@@ -342,13 +342,6 @@
                 description = "Server bind address";
               };
 
-              idleTimeout = mkOption {
-                type = types.nullOr types.int;
-                default = null;
-                description = "Seconds of inactivity before unloading model (like Ollama). Null = never unload";
-                example = 300;
-              };
-
               extraArgs = mkOption {
                 type = types.listOf types.str;
                 default = [ ];
@@ -410,14 +403,9 @@
               description = "Additional global arguments for all llama-server instances";
             };
 
-            idleTimeout = mkOption {
-              type = types.nullOr types.int;
-              default = null;
-              description = ''Seconds of inactivity before unloading model from memory (similar to Ollama).
-                Set to 0 for immediate unload after each request, null to never unload.
-                Can be overridden per-model.'';
-              example = 300;
-            };
+            # NOTE: idleTimeout is reserved for future use when llama.cpp merges
+            # https://github.com/ggml-org/llama.cpp/pull/18228
+            # For now, models stay loaded permanently.
 
             startupDelay = mkOption {
               type = types.int;
@@ -462,7 +450,6 @@
                   port = cfg.port;
                   contextSize = cfg.contextSize;
                   host = cfg.host;
-                  idleTimeout = cfg.idleTimeout;
                   extraArgs = cfg.extraArgs;
                 }
               ]
@@ -487,9 +474,6 @@
                     let
                       effectiveBackend = if model.backend == null then cfg.backend else model.backend;
                       llamaPkg = getLlamaPkg model.backend;
-                      # Use per-model idleTimeout if set, otherwise global, otherwise null
-                      effectiveIdleTimeout = if model.idleTimeout != null then model.idleTimeout else cfg.idleTimeout;
-                      idleTimeoutArgs = lib.optionalString (effectiveIdleTimeout != null) "--idle-timeout ${toString effectiveIdleTimeout}";
                     in
                     {
                       description = "Llama.cpp Server - ${model.name} [${effectiveBackend}] (Strix Halo)";
@@ -527,7 +511,6 @@
                             -c ${toString model.contextSize} \
                             -ngl 999 -fa 1 --no-mmap \
                             --host ${model.host} --port ${toString model.port} \
-                            ${idleTimeoutArgs} \
                             ${concatStringsSep " " model.extraArgs}
                         '';
 

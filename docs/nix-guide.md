@@ -65,7 +65,6 @@ modules = [
 services.strix-halo-llama = {
   enable = true;
   backend = "vulkan-radv";
-  idleTimeout = 300;  # Unload models after 5 minutes of inactivity (like Ollama)
   models = [
     {
       name = "fast";
@@ -84,36 +83,6 @@ curl http://localhost:8000/v1/models
 ```
 
 ## Configuration
-
-### Idle Timeout (Ollama-like Behavior)
-
-By default, models stay loaded in memory permanently. To automatically unload models after a period of inactivity (similar to Ollama's keep-alive feature), use the `idleTimeout` option:
-
-```nix
-services.strix-halo-llama = {
-  enable = true;
-  backend = "vulkan-radv";
-  idleTimeout = 300;  # Unload models after 5 minutes of inactivity
-  
-  models = [
-    { name = "assistant"; model = /mnt/models/mistral-7b.gguf; port = 8000; }
-    { 
-      name = "always-on"; 
-      model = /mnt/models/small-model.gguf; 
-      port = 8001;
-      idleTimeout = null;  # Override: this model never unloads
-    }
-  ];
-};
-```
-
-| `idleTimeout` Value | Behavior |
-|---------------------|----------|
-| `null` (default)    | Model stays loaded forever |
-| `0`                 | Unload immediately after each request |
-| `300`               | Unload after 5 minutes of no requests |
-
-When a model is unloaded, the next request will trigger a reload (with a brief delay).
 
 ### Single Model
 
@@ -338,7 +307,6 @@ All available options for per-model configuration:
   backend = "vulkan-radv";        # "vulkan-radv", "vulkan", "rocm" (optional, inherits global)
   contextSize = 8192;             # Context window size (optional, default 8192)
   host = "127.0.0.1";             # Listen address (optional, default "127.0.0.1")
-  idleTimeout = 300;              # Seconds before unloading model (optional, like Ollama's keep-alive)
   extraArgs = [ "--threads" "8" ]; # Additional llama-server arguments (optional)
 }
 ```
@@ -349,11 +317,13 @@ Global options:
 services.strix-halo-llama = {
   enable = true;
   backend = "vulkan-radv";        # Default backend for all models
-  idleTimeout = 300;              # Default idle timeout for all models (null = never unload)
   startupDelay = 10;              # Seconds to wait for GPU initialization on boot (prevents ROCm crashes)
   # ...
 };
 ```
+
+> **Note:** Idle timeout / automatic model unloading (like Ollama) is planned for a future release.
+> See [llama.cpp PR #18228](https://github.com/ggml-org/llama.cpp/pull/18228) for progress.
 
 ## Service Management
 
