@@ -496,10 +496,12 @@
                       wantedBy = [ "multi-user.target" ];
                       
                       # Wait for GPU hardware to be ready - critical for ROCm stability on boot
-                      after = [ "network.target" "systemd-udev-settle.service" ]
-                        ++ lib.optionals (effectiveBackend == "rocm") [ "dev-kfd.device" ];
+                      after = [ "network.target" "systemd-udev-settle.service" ];
                       wants = [ "systemd-udev-settle.service" ];
-                      requires = lib.optionals (effectiveBackend == "rocm") [ "dev-kfd.device" ];
+                      
+                      # Retry multiple times with increasing delays on boot failures
+                      startLimitIntervalSec = 300;
+                      startLimitBurst = 5;
 
                       environment = (lib.optionalAttrs (effectiveBackend == "rocm") {
                         HSA_OVERRIDE_GFX_VERSION = "11.5.1";
@@ -531,9 +533,6 @@
 
                         Restart = "on-failure";
                         RestartSec = 10;
-                        # Retry multiple times with increasing delays on boot failures
-                        StartLimitIntervalSec = 300;
-                        StartLimitBurst = 5;
                         
                         User = "llama-server";
                         Group = "llama-server";
